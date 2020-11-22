@@ -1,20 +1,26 @@
 #!/usr/bin/python3
 
+import os
+import random
+import sys
+
+from time import time
 from PyQt5 import QtWidgets, QtGui, QtCore
-import sys, os
-import design
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT
 from matplotlib.figure import Figure
-import random
-from time import time
+
+import design
 
 tfps = 20
 switch_time = time()
 log_time = time()
 amperage = []
 carriers = []
+vahx = [0]
+vahy = [0]
 barrier_capacity = 30
 
+is_secondary = True
 is_back = False
 is_alternating = False
 voltage_source = 0
@@ -23,10 +29,11 @@ alternating_frequency = 0
 
 
 class Carrier:
-    def __init__(self, is_electron, posx, posy):
+    def __init__(self, is_electron, posx, posy, extra):
         self.is_electron = is_electron
         self.posx = posx
         self.posy = posy
+        self.extra = extra
 
 
 class AmpermetrWidget(QtWidgets.QLabel):
@@ -122,7 +129,31 @@ class PlotWidget(QtWidgets.QWidget):
         ax.plot(amperage, linestyle='-', color='#008000')
         # ax.set(title='Осцилограф', xlable='t, сек', ylable='V, В')
         # ax.set_xlable('t, сек')
-        ax.set_title('title')
+        ax.set_title('Оcцилограф')
+        self.canvas.draw()
+
+
+class VAHWidget(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.mainLayout = QtWidgets.QVBoxLayout(self)
+        self.figure = Figure()
+        self.canvas = FigureCanvasQTAgg(self.figure)
+        self.navToolbar = NavigationToolbar2QT(self.canvas, self)
+        self.mainLayout.addWidget(self.canvas)
+        self.mainLayout.addWidget(self.navToolbar)
+
+    def draw(self):
+        self.figure.clear()
+        ax = self.figure.add_subplot(111)
+        ax.set_facecolor('#DCDCDC')
+        if is_back:
+            ax.set_ylim([-10, 1])
+        else:
+            ax.set_ylim([-1, 10])
+        ax.grid()
+        ax.plot(vahx, vahy, linestyle='-', color='#FF0000')
+        ax.set_title('Вольт-амперная характеристика')
         self.canvas.draw()
 
 
@@ -146,6 +177,12 @@ class VisualApp(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.SchemaWidget.setMinimumSize(QtCore.QSize(500, 200))
         self.canvas_layout.addWidget(self.SchemaWidget)
         self.SchemaWidget.draw()
+        # VAH widget
+        self.VAHWidget = VAHWidget()
+        self.VAHWidget.setSizePolicy(self.sizePolicy)
+        self.VAHWidget.setMinimumSize(QtCore.QSize(400, 500))
+        self.horizontal_layout.addWidget(self.VAHWidget)
+        self.VAHWidget.draw()
         # Ampermetr widget
         self.AmpermetrWidget = AmpermetrWidget()
         self.AmpermetrWidget.setSizePolicy(self.sizePolicy)
@@ -163,7 +200,9 @@ class VisualApp(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.alternating_frequency.valueChanged.connect(self.update_params)
         self.is_back.clicked.connect(self.update_params)
         self.is_alternating.clicked.connect(self.update_params)
+        self.is_secondary.clicked.connect(self.update_params)
 
+        self.is_secondary.setChecked(is_secondary)
         self.update_params()
 
     def tick(self):
@@ -185,11 +224,16 @@ class VisualApp(QtWidgets.QMainWindow, design.Ui_MainWindow):
         elif barrier_capacity > 25 and not is_back:
             barrier_capacity -= 1
         # Create carriers
-        if len(carriers) < 30 and voltage_source > voltage_barrier and not is_back:
+        if len(carriers) < 40 and voltage_source > voltage_barrier and (not is_back or is_back and voltage_source > voltage_barrier * 5):
             if random.randint(0, 1) > 0:
-                carriers.append(Carrier(True, 750 + random.randint(0, 50), random.randint(50, 130)))
+                carriers.append(Carrier(True, 750 + random.randint(0, 50), random.randint(50, 130), False))
             else:
-                carriers.append(Carrier(False, 200 + random.randint(0, 50), random.randint(50, 130)))
+                carriers.append(Carrier(False, 200 + random.randint(0, 50), random.randint(50, 130), False))
+        if is_secondary and len(carriers) < 40 and random.randint(0, 10) > 9 and voltage_source > voltage_barrier and is_back:
+            if random.randint(0, 1) > 0:
+                carriers.append(Carrier(False, 750 + random.randint(0, 50), random.randint(50, 130), True))
+            else:
+                carriers.append(Carrier(True, 200 + random.randint(0, 50), random.randint(50, 130), True))
         # Move carriers
         if not is_back:
             for i in carriers:
@@ -205,24 +249,47 @@ class VisualApp(QtWidgets.QMainWindow, design.Ui_MainWindow):
                         i.posx += (10 + random.randint(0, 10))
         else:
             for i in carriers:
-                if not i.is_electron:
-                    if i.posx > 780:
-                        carriers.remove(i)
-                    elif i.posx > 500:
-                        i.posx += (10 + random.randint(0, 10))
-                    elif i.posx < 220:
-                        carriers.remove(i)
-                    elif 500 > i.posx > 300:
-                        i.posx -= (10 + random.randint(0, 10))
+                if i.extra:
+                    if i.is_electron:
+                        if i.posx > 780:
+                            carriers.remove(i)
+                        else:
+                            i.posx += (10 + random.randint(0, 10))
+                    else:
+                        if i.posx < 220:
+                            carriers.remove(i)
+                        else:
+                            i.posx -= (10 + random.randint(0, 10))
+                elif voltage_barrier * 5 < voltage_source and is_secondary:
+                    if i.is_electron:
+                        if i.posx < 220:
+                            carriers.remove(i)
+                        else:
+                            i.posx -= (10 + random.randint(0, 10))
+                    else:
+                        if i.posx > 780:
+                            carriers.remove(i)
+                        else:
+                            i.posx += (10 + random.randint(0, 10))
                 else:
-                    if i.posx < 220:
-                        carriers.remove(i)
-                    elif i.posx < 500:
-                        i.posx -= (10 + random.randint(0, 10))
-                    elif i.posx > 780:
-                        carriers.remove(i)
-                    elif 500 < i.posx < 700:
-                        i.posx += (10 + random.randint(0, 10))
+                    if not i.is_electron:
+                        if i.posx > 780:
+                            carriers.remove(i)
+                        elif i.posx > 500:
+                            i.posx += (10 + random.randint(0, 10))
+                        elif i.posx < 220:
+                            carriers.remove(i)
+                        elif 500 > i.posx > 300:
+                            i.posx -= (10 + random.randint(0, 10))
+                    elif i.is_electron:
+                        if i.posx < 220:
+                            carriers.remove(i)
+                        elif i.posx < 500:
+                            i.posx -= (10 + random.randint(0, 10))
+                        elif i.posx > 780:
+                            carriers.remove(i)
+                        elif 500 < i.posx < 700:
+                            i.posx += (10 + random.randint(0, 10))
         for i in carriers:
             i.posx += random.randint(-5, 5)
         # Change current
@@ -237,13 +304,12 @@ class VisualApp(QtWidgets.QMainWindow, design.Ui_MainWindow):
             for i in range(0, len(amperage) - 1):
                 amperage[i] = amperage[i + 1]
             if voltage_source > voltage_barrier:
-                if False:  # is_alternating
-                    if alternating_frequency < 1.5:
-                        amp = (voltage_source - voltage_barrier)
-                    else:
-                        amp = 1 / alternating_frequency * volt
-                elif is_back:
-                    amp = 0.1 * (volt + random.uniform(-0.1 * volt, 0.1 * volt))
+                if is_back:
+                    if is_secondary:
+                        if voltage_source > voltage_barrier * 5:
+                            amp = volt + random.uniform(-0.1 * volt, 0.1 * volt)
+                        else:
+                            amp = 0.1 * (volt + random.uniform(-0.1 * volt, 0.1 * volt))
                 else:
                     amp = volt + random.uniform(-0.1 * volt, 0.1 * volt)
             amperage[len(amperage) - 1] = amp
@@ -256,6 +322,8 @@ class VisualApp(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 is_back = self.is_back.isChecked()
                 global is_alternating
                 is_alternating = self.is_alternating.isChecked()
+                global is_secondary
+                is_secondary = self.is_secondary.isChecked()
                 global voltage_source
                 voltage_source = float(self.voltage_source.value())
                 global voltage_barrier
@@ -270,6 +338,28 @@ class VisualApp(QtWidgets.QMainWindow, design.Ui_MainWindow):
                 self.error_msg.setText('<font color="red">Введены некорректные параметры системы</font>')
         except:
             self.error_msg.setText('<font color="red">Введены некорректные параметры системы</font>')
+        finally:
+            global vahx
+            global vahy
+            vahx = []
+            vahy = []
+            for i in range(0, round(voltage_source) * 10):
+                if is_back:
+                    vahx.append(i / 10 * -1)
+                    if is_secondary:
+                        if i / 10 < voltage_barrier * 5:
+                            vahy.append(i / 100 * -1)
+                        else:
+                            vahy.append(i / 10 * -1)
+                    else:
+                        vahy.append(0)
+                else:
+                    vahx.append(i / 10)
+                    if i / 10 < voltage_barrier:
+                        vahy.append(0)
+                    else:
+                        vahy.append(i / 10)
+            self.VAHWidget.draw()
 
 
 def main():
