@@ -18,6 +18,7 @@ amperage = []
 carriers = []
 vahx = [0]
 vahy = [0]
+stime = time()
 barrier_capacity = 30
 
 is_secondary = True
@@ -26,6 +27,8 @@ is_alternating = False
 voltage_source = 0
 voltage_barrier = 10
 alternating_frequency = 0
+
+spacer = '                                                                                '
 
 
 class Carrier:
@@ -201,6 +204,8 @@ class VisualApp(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.is_back.clicked.connect(self.update_params)
         self.is_alternating.clicked.connect(self.update_params)
         self.is_secondary.clicked.connect(self.update_params)
+        # Menu bar
+        self.actionExit.triggered.connect(self.close)
 
         self.is_secondary.setChecked(is_secondary)
         self.update_params()
@@ -214,6 +219,8 @@ class VisualApp(QtWidgets.QMainWindow, design.Ui_MainWindow):
         self.PlotWidget.draw()
         self.SchemaWidget.draw()
         self.AmpermetrWidget.draw()
+        self.statusbar.showMessage('I = %s А    V = %s В    R = 1 Ом    Vзап = %s В    %s    Время симуляции: %s'
+                                   % (voltage_source, voltage_source, voltage_barrier, spacer, round(time() - stime, 1)))
         # Change barrier
         if voltage_source > voltage_barrier and not is_back and barrier_capacity > 0:
             barrier_capacity -= 1
